@@ -17,3 +17,45 @@ towncrier = "^22.8.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 79
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.venv
+  | docs
+)/
+'''
+
+[tool.towncrier]
+name = "serializabledt"
+directory = "changes"
+package = "serializabledt"
+filename = "CHANGELOG.rst"
+issue_format = "`#{issue} <https://github.com/Lucino772/serializable-datatypes/issues/{issue}>`_"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules --cov=./ --cov-report=xml ./tests"
+
+[tool.mypy]
+show_error_codes = true
+warn_unused_configs = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = "serializabledt"
+disallow_untyped_decorators = true
+disallow_subclassing_any = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+disallow_any_unimported = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unused_ignores = true
+implicit_reexport = false
+strict_equality = true
