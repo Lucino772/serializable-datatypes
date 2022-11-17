@@ -1,3 +1,4 @@
+import json
 from struct import Struct
 
 import dtstruct
@@ -20,6 +21,24 @@ bytearray_t = dtstruct.template(
     read=lambda self, buffer, ctx: buffer.read(self.get_size(ctx)),
     size=lambda self, ctx: ctx["len"],
 )()
+
+# string
+string_t = dtstruct.adapter(
+    "string_t",
+    template=bytearray_t,
+    encode=lambda self, value, ctx: str(value).encode(self.encoding),
+    decode=lambda self, value, ctx: bytes(value).decode(self.encoding),
+    args={"encoding": str},
+)
+
+# json
+json_t = dtstruct.adapter(
+    "json_t",
+    template=bytearray_t,
+    encode=lambda self, value, ctx: json.dumps(value).encode(self.encoding),
+    decode=lambda self, value, ctx: json.loads(value.decode(self.encoding)),
+    args={"encoding": str},
+)
 
 # byte
 int8be_t = struct_t(">", "b")
