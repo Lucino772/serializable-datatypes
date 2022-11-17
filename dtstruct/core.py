@@ -14,7 +14,14 @@ class _BaseTemplate:
         return f"{self._name}.{name}"
 
     def create_method(
-        self, name, filename, script, args=None, _globals=None, _locals=None
+        self,
+        name,
+        filename,
+        script,
+        args=None,
+        kwargs=None,
+        _globals=None,
+        _locals=None,
     ):
         if _locals is None:
             _locals = {}
@@ -25,12 +32,21 @@ class _BaseTemplate:
         if args is None:
             args = []
 
+        if kwargs is None:
+            kwargs = {}
+
         if len(script) == 0:
             script.append("pass")
 
+        _fullargs = []
         if len(args) > 0:
+            _fullargs.append(", ".join(args))
+        if len(kwargs) > 0:
+            _fullargs.append(", ".join([f"{key}=None" for key in kwargs]))
+
+        if len(_fullargs) > 0:
             code = "def {}(self, {}):\n\t{}".format(
-                name, ", ".join(args), "\n\t".join(script)
+                name, ", ".join(_fullargs), "\n\t".join(script)
             )
         else:
             code = "def {}(self):\n\t{}".format(name, "\n\t".join(script))
@@ -138,10 +154,11 @@ class TemplateBuilder(_BaseTemplate):
         script.append("\tnbytes = _extern_write(self, _buffer, value, ctx)")
         script.append("\t_bytes = _buffer.getvalue()")
 
-        # write info in context
-        script.append("ctx['template.bytes'] = _bytes")
-        script.append("ctx['template.size'] = nbytes")
-        script.append("ctx['template.value'] = value")
+        # write info in capture if given
+        script.append("if capture is not None:")
+        script.append("\tcapture['base.bytes'] = _bytes")
+        script.append("\tcapture['base.size'] = nbytes")
+        script.append("\tcapture['base.value'] = value")
 
         # write to buffer
         script.append("return buffer.write(_bytes)")
@@ -150,7 +167,8 @@ class TemplateBuilder(_BaseTemplate):
             "write",
             self._get_method_filename("write"),
             script,
-            ["buffer", "value", "ctx"],
+            ["buffer", "value"],
+            ["ctx", "capture"],
             _globals={"_BytesIO": io.BytesIO, "_extern_write": self._write},
         )
         return write_method
@@ -161,9 +179,10 @@ class TemplateBuilder(_BaseTemplate):
         script.append("value = _extern_read(self, buffer, ctx)")
 
         # write info in context
-        script.append("ctx['template.bytes'] = None")
-        script.append("ctx['template.size'] = buffer.tell() - start")
-        script.append("ctx['template.value'] = value")
+        script.append("if capture is not None:")
+        script.append("\tcapture['base.bytes'] = None")
+        script.append("\tcapture['base.size'] = buffer.tell() - start")
+        script.append("\tcapture['base.value'] = value")
 
         # return value
         script.append("return value")
@@ -172,7 +191,8 @@ class TemplateBuilder(_BaseTemplate):
             "read",
             self._get_method_filename("read"),
             script,
-            ["buffer", "ctx"],
+            ["buffer"],
+            ["ctx", "capture"],
             _globals={"_extern_read": self._read},
         )
         return read_method
@@ -221,15 +241,23 @@ class AdapterBuilder(_BaseTemplate):
 
     def _wrap_template_write(self):
         script = []
+        # if capture is given, store original value in encode.*
+        script.append("if capture is not None:")
+        script.append("\tcapture['encode.value'] = value")
+        script.append("\tcapture['encode.size'] = len(value)")
+
+        # encode and write the value
         script.append("encoded_value = _extern_encode(self, value, ctx)")
-        script.append("ctx['adapter.value'] = value")
-        script.append("return _extern_write(buffer, encoded_value, ctx)")
+        script.append(
+            "return _extern_write(buffer, encoded_value, ctx, capture)"
+        )
 
         write_method = self.create_method(
             "write",
             self._get_method_filename("write"),
             script,
-            ["buffer", "value", "ctx"],
+            ["buffer", "value"],
+            ["ctx", "capture"],
             _globals={
                 "_extern_encode": self._encode,
                 "_extern_write": self._template.write,
@@ -239,16 +267,24 @@ class AdapterBuilder(_BaseTemplate):
 
     def _wrap_template_read(self):
         script = []
-        script.append("encoded_value = _extern_read(buffer, ctx)")
+        # read and decode value
+        script.append("encoded_value = _extern_read(buffer, ctx, capture)")
         script.append("value = _extern_decode(self, encoded_value, ctx)")
-        script.append("ctx['adapter.value'] = value")
+
+        # if capture is given, store original value in encode.*
+        script.append("if capture is not None:")
+        script.append("\tcapture['encode.value'] = value")
+        script.append("\tcapture['encode.size'] = len(value)")
+
+        # return original value
         script.append("return value")
 
         read_method = self.create_method(
             "read",
             self._get_method_filename("read"),
             script,
-            ["buffer", "ctx"],
+            ["buffer"],
+            ["ctx", "capture"],
             _globals={
                 "_extern_decode": self._decode,
                 "_extern_read": self._template.read,
@@ -299,22 +335,30 @@ class TransformerBuilder(_BaseTemplate):
 
     def _create_write_method(self):
         script = []
+
+        # write bytes in temp buffer then transform them
         script.append("with _BytesIO() as _buffer:")
-        script.append("\tself._template.write(_buffer, value, ctx)")
+        script.append("\tself._template.write(_buffer, value, ctx, capture)")
         script.append("\t_bytes = _buffer.getvalue()")
         script.append("if ctx is not None: ctx.update({ 'len': len(_bytes) })")
         script.append(
             "transformed_bytes = _extern_transform_write(self, _bytes, ctx)"
         )
-        script.append("ctx['transformer.bytes'] = transformed_bytes")
-        script.append("ctx['transformer.size'] = len(transformed_bytes)")
+
+        # if capture is given, store transformed value in transform.*
+        script.append("if capture is not None:")
+        script.append("\tcapture['transform.bytes'] = transformed_bytes")
+        script.append("\tcapture['transform.size'] = len(transformed_bytes)")
+
+        # write those transformed bytes
         script.append("return buffer.write(transformed_bytes)")
 
         write_method = self.create_method(
             "write",
             self._get_method_filename("write"),
             script,
-            ["buffer", "value", "ctx"],
+            ["buffer", "value"],
+            ["ctx", "capture"],
             _globals={
                 "_extern_transform_write": self._write,
                 "_BytesIO": io.BytesIO,
@@ -324,22 +368,30 @@ class TransformerBuilder(_BaseTemplate):
 
     def _create_read_method(self):
         script = []
+        # read transformed bytes
+        script.append("transformed_bytes = buffer.read(self.get_size(ctx))")
+
+        # if capture is given, store transformed value in transform.*
+        script.append("if capture is not None:")
+        script.append("\tcapture['transform.bytes'] = transformed_bytes")
+        script.append("\tcapture['transform.size'] = len(transformed_bytes)")
+
+        # un-transform values
         script.append(
-            "_bytes = _extern_transform_read(self, buffer.read(self.get_size(ctx)), ctx)"
+            "_bytes = _extern_transform_read(self, transformed_bytes, ctx)"
         )
-        script.append("ctx['transformer.bytes'] = _bytes")
-        script.append("ctx['transformer.size'] = len(_bytes)")
         script.append("with _BytesIO(_bytes) as _buffer:")
         script.append(
             "\tif ctx is not None: ctx.update({ 'len': len(_bytes) })"
         )
-        script.append("\treturn self._template.read(_buffer, ctx)")
+        script.append("\treturn self._template.read(_buffer, ctx, capture)")
 
         read_method = self.create_method(
             "read",
             self._get_method_filename("read"),
             script,
-            ["buffer", "ctx"],
+            ["buffer"],
+            ["ctx", "capture"],
             _globals={
                 "_extern_transform_read": self._read,
                 "_BytesIO": io.BytesIO,
@@ -363,17 +415,20 @@ class ComposeBuilder(_BaseTemplate):
     def _create_write_method(self):
         script = []
         script.append("_ctx = { '_local': ctx }")
+        script.append("_captures = {}")
 
         _args_to_compute = []
         for argname, argvalue in self._kwargs.items():
             script.append(f"_ctx['{argname}'] = dict()")
+            script.append(f"_captures['{argname}'] = dict()")
+
             if isinstance(argvalue, tuple) and len(argvalue) == 3:
                 script.append(
                     f"_ctx['{argname}'].update(_args['{argname}'][1](_ctx))"
                 )
                 script.append("with _BytesIO() as _buffer:")
                 script.append(
-                    f"\tnbytes = _args['{argname}'][0].write(_buffer, values['{argname}'], _ctx['{argname}'])"
+                    f"\tnbytes = _args['{argname}'][0].write(_buffer, values['{argname}'], _ctx['{argname}'], _captures['{argname}'])"
                 )
                 script.append(
                     f"\t_ctx['{argname}'].update({{ 'compose.bytes': _buffer.getvalue(), 'compose.size': nbytes }})"
@@ -383,7 +438,7 @@ class ComposeBuilder(_BaseTemplate):
             else:
                 script.append("with _BytesIO() as _buffer:")
                 script.append(
-                    f"\tnbytes = _args['{argname}'].write(_buffer, values['{argname}'], _ctx['{argname}'])"
+                    f"\tnbytes = _args['{argname}'].write(_buffer, values['{argname}'], _ctx['{argname}'], _captures['{argname}'])"
                 )
                 script.append(
                     f"\t_ctx['{argname}'].update({{ 'compose.bytes': _buffer.getvalue(), 'compose.size': nbytes }})"
@@ -393,11 +448,21 @@ class ComposeBuilder(_BaseTemplate):
             argvalue = self._kwargs[argname]
             script.append("with _BytesIO() as _buffer:")
             script.append(
-                f"\tnbytes = _args['{argname}'][0].write(_buffer, _args['{argname}'][1](_ctx), _ctx['{argname}'])"
+                f"\tnbytes = _args['{argname}'][0].write(_buffer, _args['{argname}'][1](_ctx), _ctx['{argname}'], _captures['{argname}'])"
             )
             script.append(
                 f"\t_ctx['{argname}'].update({{ 'compose.bytes': _buffer.getvalue(), 'compose.size': nbytes }})"
             )
+
+        # if capture is given, store data in compose.*
+        script.append("if capture is not None:")
+        script.append(
+            "\tcapture['compose.bytes'] = b''.join([_ctx[argname]['compose.bytes'] for argname in _args.keys()])"
+        )
+        script.append(
+            "\tcapture['compose.size'] = len(capture['compose.bytes'])"
+        )
+        script.append("\tcapture.update(_captures)")
 
         # Once everything has been computed, write to buffer
         script.append(
@@ -408,7 +473,8 @@ class ComposeBuilder(_BaseTemplate):
             "write",
             self._get_method_filename("write"),
             script,
-            ["buffer", "values", "ctx"],
+            ["buffer", "values"],
+            ["ctx", "capture"],
             _globals={"_BytesIO": io.BytesIO, "_args": self._kwargs},
         )
         return write_method
@@ -416,9 +482,11 @@ class ComposeBuilder(_BaseTemplate):
     def _create_read_method(self):
         script = []
         script.append("_ctx = { '_local': ctx }")
+        script.append("_captures = {}")
 
         for argname, argvalue in self._kwargs.items():
             script.append(f"_ctx['{argname}'] = dict()")
+            script.append(f"_captures['{argname}'] = dict()")
 
             script.append("_start = buffer.tell()")
             if isinstance(argvalue, tuple) and len(argvalue) == 3:
@@ -426,19 +494,27 @@ class ComposeBuilder(_BaseTemplate):
                     f"_ctx['{argname}'].update(_args['{argname}'][2](_ctx))"
                 )
                 script.append(
-                    f"value = _args['{argname}'][0].read(buffer, _ctx['{argname}'])"
+                    f"value = _args['{argname}'][0].read(buffer, _ctx['{argname}'], _captures['{argname}'])"
                 )
             elif isinstance(argvalue, tuple) and len(argvalue) == 2:
                 script.append(
-                    f"value = _args['{argname}'][0].read(buffer, _ctx['{argname}'])"
+                    f"value = _args['{argname}'][0].read(buffer, _ctx['{argname}'], _captures['{argname}'])"
                 )
             else:
                 script.append(
-                    f"value = _args['{argname}'].read(buffer, _ctx['{argname}'])"
+                    f"value = _args['{argname}'].read(buffer, _ctx['{argname}'], _captures['{argname}'])"
                 )
             script.append(
                 f"_ctx['{argname}'].update({{ 'compose.value': value, 'compose.size': buffer.tell() - _start }})"
             )
+
+        # if capture is given, store data in compose.*
+        script.append("if capture is not None:")
+        script.append("\tcapture['compose.bytes'] = None")
+        script.append(
+            "\tcapture['compose.size'] = sum([_ctx[argname]['compose.size'] for argname in _args.keys()])"
+        )
+        script.append("\tcapture.update(_captures)")
 
         # Once everything is read, return dict only with values
         script.append(
@@ -449,7 +525,8 @@ class ComposeBuilder(_BaseTemplate):
             "read",
             self._get_method_filename("read"),
             script,
-            ["buffer", "ctx"],
+            ["buffer"],
+            ["ctx", "capture"],
             _globals={"_args": self._kwargs},
         )
         return read_method
