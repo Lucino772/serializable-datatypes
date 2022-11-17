@@ -254,6 +254,7 @@ class TransformerBuilder(_BaseTemplate):
         script.append("with _BytesIO() as _buffer:")
         script.append("\tself._template.write(_buffer, value, ctx)")
         script.append("\t_bytes = _buffer.getvalue()")
+        script.append("if ctx is not None: ctx.update({ 'len': len(_bytes) })")
         script.append(
             "return buffer.write(_extern_transform_write(self, _bytes, ctx))"
         )
@@ -276,6 +277,9 @@ class TransformerBuilder(_BaseTemplate):
             "_bytes = _extern_transform_read(self, buffer.read(self.get_size(ctx)), ctx)"
         )
         script.append("with _BytesIO(_bytes) as _buffer:")
+        script.append(
+            "\tif ctx is not None: ctx.update({ 'len': len(_bytes) })"
+        )
         script.append("\treturn self._template.read(_buffer, ctx)")
 
         read_method = self.create_method(
