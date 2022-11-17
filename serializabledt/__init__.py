@@ -26,6 +26,8 @@ Using the struct module:
 
     array(T)       (T[])
 """
+from .core import adapter, template, transformer
+
 # import zlib
 # import struct
 # import dtstruct

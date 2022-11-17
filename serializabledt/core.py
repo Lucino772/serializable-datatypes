@@ -295,3 +295,18 @@ class TransformerBuilder(_BaseTemplate):
         cls_dict["write"] = self._create_write_method()
         cls_dict["read"] = self._create_read_method()
         cls_dict["get_size"] = self._size
+
+
+def template(name, write, read, size, args=None, variables=None):
+    builder = TemplateBuilder(name, write, read, size, args, variables)
+    return builder.build()
+
+
+def adapter(name, template, encode, decode, args=None, variables=None):
+    builder = AdapterBuilder(name, template, encode, decode, args, variables)
+    return builder.build()
+
+
+def transformer(name, write, read, size, args=None, variables=None):
+    builder = TransformerBuilder(name, write, read, size, args, variables)
+    return builder.build()
