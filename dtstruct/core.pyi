@@ -3,6 +3,7 @@ from typing import (
     BinaryIO,
     Callable,
     Mapping,
+    MutableMapping,
     Protocol,
     Tuple,
     Type,
@@ -13,11 +14,14 @@ from typing import (
 T = TypeVar("T")
 K = TypeVar("K")
 Context = Mapping[str, Any]
+Captures = MutableMapping[str, Any]
 ComposeDataType = Union[
     DataType,
-    Tuple[DataType, Callable[[Context], Any]],
+    Tuple[DataType, Callable[[Context, Captures], Any]],
     Tuple[
-        DataType, Callable[[Context], Context], Callable[[Context], Context]
+        DataType,
+        Callable[[Context, Captures], Context],
+        Callable[[Context, Captures], Context],
     ],
 ]
 

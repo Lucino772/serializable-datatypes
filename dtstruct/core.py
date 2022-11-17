@@ -414,59 +414,53 @@ class ComposeBuilder(_BaseTemplate):
 
     def _create_write_method(self):
         script = []
-        script.append("_ctx = { '_local': ctx }")
+        script.append("nbytes = 0")
+        script.append("_bytes = {}")
         script.append("_captures = {}")
 
         _args_to_compute = []
         for argname, argvalue in self._kwargs.items():
-            script.append(f"_ctx['{argname}'] = dict()")
             script.append(f"_captures['{argname}'] = dict()")
 
             if isinstance(argvalue, tuple) and len(argvalue) == 3:
-                script.append(
-                    f"_ctx['{argname}'].update(_args['{argname}'][1](_ctx))"
-                )
                 script.append("with _BytesIO() as _buffer:")
                 script.append(
-                    f"\tnbytes = _args['{argname}'][0].write(_buffer, values['{argname}'], _ctx['{argname}'], _captures['{argname}'])"
+                    f"\tdtype, context_write, context_read = _args['{argname}']"
                 )
                 script.append(
-                    f"\t_ctx['{argname}'].update({{ 'compose.bytes': _buffer.getvalue(), 'compose.size': nbytes }})"
+                    f"\tnbytes += dtype.write(_buffer, values['{argname}'], context_write(ctx, _captures), _captures['{argname}'])"
                 )
+                script.append(f"\t_bytes['{argname}'] = _buffer.getvalue()")
             elif isinstance(argvalue, tuple) and len(argvalue) == 2:
                 _args_to_compute.append(argname)
             else:
                 script.append("with _BytesIO() as _buffer:")
+                script.append(f"\tdtype = _args['{argname}']")
                 script.append(
-                    f"\tnbytes = _args['{argname}'].write(_buffer, values['{argname}'], _ctx['{argname}'], _captures['{argname}'])"
+                    f"\tnbytes += dtype.write(_buffer, values['{argname}'], ctx, _captures['{argname}'])"
                 )
-                script.append(
-                    f"\t_ctx['{argname}'].update({{ 'compose.bytes': _buffer.getvalue(), 'compose.size': nbytes }})"
-                )
+                script.append(f"\t_bytes['{argname}'] = _buffer.getvalue()")
 
         for argname in reversed(_args_to_compute):
             argvalue = self._kwargs[argname]
             script.append("with _BytesIO() as _buffer:")
+            script.append(f"\tdtype, get_value = _args['{argname}']")
             script.append(
-                f"\tnbytes = _args['{argname}'][0].write(_buffer, _args['{argname}'][1](_ctx), _ctx['{argname}'], _captures['{argname}'])"
+                f"\tnbytes += dtype.write(_buffer, get_value(ctx, _captures), ctx, _captures['{argname}'])"
             )
-            script.append(
-                f"\t_ctx['{argname}'].update({{ 'compose.bytes': _buffer.getvalue(), 'compose.size': nbytes }})"
-            )
+            script.append(f"\t_bytes['{argname}'] = _buffer.getvalue()")
 
         # if capture is given, store data in compose.*
         script.append("if capture is not None:")
         script.append(
-            "\tcapture['compose.bytes'] = b''.join([_ctx[argname]['compose.bytes'] for argname in _args.keys()])"
+            "\tcapture['compose.bytes'] = b''.join([_bytes[argname] for argname in _args.keys()])"
         )
-        script.append(
-            "\tcapture['compose.size'] = len(capture['compose.bytes'])"
-        )
+        script.append("\tcapture['compose.size'] = nbytes")
         script.append("\tcapture.update(_captures)")
 
         # Once everything has been computed, write to buffer
         script.append(
-            "return sum([buffer.write(_ctx[argname]['compose.bytes']) for argname in _args.keys()])"
+            "return sum([buffer.write(_bytes[argname]) for argname in _args.keys()])"
         )
 
         write_method = self.create_method(
@@ -481,45 +475,44 @@ class ComposeBuilder(_BaseTemplate):
 
     def _create_read_method(self):
         script = []
-        script.append("_ctx = { '_local': ctx }")
+        script.append("nbytes = 0")
+        script.append("_values = {}")
         script.append("_captures = {}")
 
         for argname, argvalue in self._kwargs.items():
-            script.append(f"_ctx['{argname}'] = dict()")
             script.append(f"_captures['{argname}'] = dict()")
 
             script.append("_start = buffer.tell()")
+
             if isinstance(argvalue, tuple) and len(argvalue) == 3:
                 script.append(
-                    f"_ctx['{argname}'].update(_args['{argname}'][2](_ctx))"
+                    f"dtype, context_write, context_read = _args['{argname}']"
                 )
                 script.append(
-                    f"value = _args['{argname}'][0].read(buffer, _ctx['{argname}'], _captures['{argname}'])"
+                    f"value = dtype.read(buffer, context_read(ctx, _captures), _captures['{argname}'])"
                 )
             elif isinstance(argvalue, tuple) and len(argvalue) == 2:
+                script.append(f"dtype, get_value = _args['{argname}']")
                 script.append(
-                    f"value = _args['{argname}'][0].read(buffer, _ctx['{argname}'], _captures['{argname}'])"
+                    f"value = dtype.read(buffer, ctx, _captures['{argname}'])"
                 )
             else:
+                script.append(f"dtype = _args['{argname}']")
                 script.append(
-                    f"value = _args['{argname}'].read(buffer, _ctx['{argname}'], _captures['{argname}'])"
+                    f"value = dtype.read(buffer, ctx, _captures['{argname}'])"
                 )
-            script.append(
-                f"_ctx['{argname}'].update({{ 'compose.value': value, 'compose.size': buffer.tell() - _start }})"
-            )
+
+            script.append("nbytes += buffer.tell() - _start")
+            script.append(f"_values['{argname}'] = value")
 
         # if capture is given, store data in compose.*
         script.append("if capture is not None:")
         script.append("\tcapture['compose.bytes'] = None")
-        script.append(
-            "\tcapture['compose.size'] = sum([_ctx[argname]['compose.size'] for argname in _args.keys()])"
-        )
+        script.append("\tcapture['compose.size'] = nbytes")
         script.append("\tcapture.update(_captures)")
 
         # Once everything is read, return dict only with values
-        script.append(
-            "return { argname: argvalue['compose.value'] for argname, argvalue in _ctx.items() if argname != '_local' }"
-        )
+        script.append("return _values")
 
         read_method = self.create_method(
             "read",
