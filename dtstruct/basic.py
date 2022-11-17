@@ -13,6 +13,14 @@ struct_t = dtstruct.template(
     variables={"fmt": lambda self: Struct(f"{self.byteorder}{self.format}")},
 )
 
+# bytearray
+bytearray_t = dtstruct.template(
+    "bytearray_t",
+    write=lambda self, buffer, value, _: buffer.write(value),
+    read=lambda self, buffer, ctx: buffer.read(self.get_size(ctx)),
+    size=lambda self, ctx: ctx["len"],
+)()
+
 # byte
 int8be_t = struct_t(">", "b")
 uint8be_t = struct_t(">", "B")
