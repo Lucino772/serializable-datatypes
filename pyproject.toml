@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "serializabledt"
+name = "dtstruct"
 version = "0.1.0"
 description = ""
 authors = ["Lucino772 <lucapalmi772@gmail.com>"]
 readme = "README.md"
-packages = [{include = "serializabledt"}]
+packages = [{include = "dtstruct"}]
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -31,9 +31,9 @@ exclude = '''
 '''
 
 [tool.towncrier]
-name = "serializabledt"
+name = "dtstruct"
 directory = "changes"
-package = "serializabledt"
+package = "dtstruct"
 filename = "CHANGELOG.rst"
 issue_format = "`#{issue} <https://github.com/Lucino772/serializable-datatypes/issues/{issue}>`_"
 
