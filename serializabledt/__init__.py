@@ -67,3 +67,60 @@ Using the struct module:
 #     tranform=lambda val: zlib.compress(val),
 #     reform=lambda val: zlib.decompress(val),
 # )()
+
+
+#### EXAMPLE 2 ####
+# import zlib
+# import struct
+# import dtstruct
+
+
+# bytearray_t = dtstruct.template(
+#     name='bytearray_t',
+#     write=...,
+#     read=...,
+#     size=lambda self, ctx: ctx['len']
+# )
+
+# string_t = dtstruct.adapter(
+#     name='string_t',
+#     template=bytearray_t,
+#     encode=...,
+#     decode=...,
+#     args={ 'encoding': str }
+# )
+
+# compressed_t = dtstruct.transformer(
+#     write=...,
+#     read=...,
+#     args={ 'level': int }
+# )
+
+# packet_t = dtstruct.compose(
+#     # TODO: lenght must be given too
+#     raw=bytearray_t,
+#     text=string_t('utf-8'),
+#     raw_zlib=compressed_t(bytearray_t),
+#     text_zlib=compressed_t(string_t('utf-8'))
+# )
+
+# buffer = ...
+
+# bytearray_t.write(buffer, b'Hello World !')
+# string_t('utf-8').write(buffer, 'Hello World !')
+# compressed_t(bytearray_t).write(buffer, b'Hello World !')
+# compressed_t(string_t('utf-8')).write(buffer, 'Hello World !')
+
+# packet_t.write(buffer,
+#     raw=b'Hello World !',
+#     text='Hello World !',
+#     raw_zlib=b'Hello World !',
+#     text_zlib='Hello World !'
+# )
+
+# bytearray_t.read(buffer, len=13)
+# string_t('utf-8').read(buffer, len=13)
+# compressed_t(bytearray_t).read(buffer, len=21)
+# compressed_t(string_t('utf-8')).read(buffer, len=21)
+
+# packet = packet_t.read(buffer)
