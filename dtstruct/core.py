@@ -437,12 +437,12 @@ class ComposeBuilder(_BaseTemplate):
                     f"value = _args['{argname}'].read(buffer, _ctx['{argname}'])"
                 )
             script.append(
-                f"_ctx['{argname}'] = {{ 'compose.value': value, 'compose.size': buffer.tell() - _start }}"
+                f"_ctx['{argname}'].update({{ 'compose.value': value, 'compose.size': buffer.tell() - _start }})"
             )
 
         # Once everything is read, return dict only with values
         script.append(
-            "return {{ argname: argvalue['compose.value'] for argname, argvalue in _ctx.items() if argname != '_local' }}"
+            "return { argname: argvalue['compose.value'] for argname, argvalue in _ctx.items() if argname != '_local' }"
         )
 
         read_method = self.create_method(
