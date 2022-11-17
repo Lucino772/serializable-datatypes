@@ -9,7 +9,7 @@ struct_t = dtstruct.template(
     read=lambda self, buffer, ctx: self.fmt.unpack(
         buffer.read(self.get_size(ctx))
     )[0],
-    size=lambda self, _: self.fm.size,
+    size=lambda self, _: self.fmt.size,
     args={"byteorder": str, "format": str},
     variables={"fmt": lambda self: Struct(f"{self.byteorder}{self.format}")},
 )
