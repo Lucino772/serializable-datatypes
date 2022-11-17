@@ -25,4 +25,4 @@ Using the struct module:
 
     array(T)       (T[])
 """
-from .core import adapter, template, transformer
+from .core import adapter, compose, template, transformer
